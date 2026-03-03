@@ -3,9 +3,21 @@ import scipy as sp
 import matplotlib.pyplot as plt
 
 #Number of particles to generate (rough estimate, this is held constant throughout the simulation but is stochastic)
-numParticlesGenerate = 1
+numParticlesGenerate = 10
 #Define mesh size (must be odd)
-meshSize = 3
+meshSize = 51
+#Define pressure of system (Pa)
+pressure = 1.01e+5
+#Define temperature of system (K)
+temperature = 298
+#Define physical constants
+#Lennard-Jones constants
+epsilon = (1.77/(6.0221408e+23))*1000
+sigma = 4.10e-10
+L = 50e-10
+#Boltzmann constant
+k = 1.38e-23
+
 #Find central index of meshgrid
 centralIndex = int((meshSize-1)/2)
 
@@ -52,9 +64,66 @@ def lineup(V,indexX,indexY,indexZ):
     rolledV = np.roll(rolledV,rollZ,axis=2)
     return rolledV
 
-epsilon = 1
-sigma = 1
-L = 5
-V = potMesh(fracX,fracY,fracZ,L,epsilon,sigma)
-print(V)
-    
+#Find the full potential energy of the system
+def getFullEnergy(fracX,fracY,fracZ,L,epsilon,sigma,particleBoolArray,particleIndices):
+    #Create the meshgrid of potential values
+    V = potMesh(fracX,fracY,fracZ,L,epsilon,sigma)
+    #Initialise total energy
+    totEnergy = 0
+    #Cycle through each particle
+    for i in range(0,len(particleIndices)):
+        #Get index of particle i
+        index = particleIndices[i]
+        shiftedV = lineup(V,*index)
+        totEnergy += np.sum(particleBoolArray*shiftedV)
+    return totEnergy
+
+#Main Monte Carlo simulation
+
+
+#Get the initial system energy
+currentEnergy = getFullEnergy(fracX,fracY,fracZ,L,epsilon,sigma,particleBoolArray,particleIndices)
+#System initial volume
+vol = L**3
+
+
+#Make small updates to the system
+for j in range(100):
+    #Make a small fractional change to L
+    newL = L+np.random.uniform(-0.1,0.1)*L
+    #Choose a particle from the particleIndices array
+    chosenParticle = np.random.randint(0,len(particleIndices))
+    #Modify the index, but make sure the indices are within bounds
+    newIndex = particleIndices[chosenParticle]+np.random.randint(-5,6,size=3)
+    newIndex += (newIndex > meshSize-1)*(-meshSize)
+    newIndex += (newIndex < 0)*(meshSize-1)
+    #Create new particle arrays
+    newBoolArray = np.copy(particleBoolArray)
+    newBoolArray[*newIndex] = 1
+    newBoolArray[*particleIndices[chosenParticle]] = 0
+    newIndices = np.copy(particleIndices)
+    newIndices[chosenParticle] = newIndex
+    #Find energy of new system configuration
+    newEnergy = getFullEnergy(fracX,fracY,fracZ,newL,epsilon,sigma,newBoolArray,newIndices)
+    #Find the Metropolis acceptance criterion for the new state in the Markov chain
+    #Define new volume
+    newVol = newL**3
+    acceptanceCriterion = ((newVol/vol)**N)*np.exp(-(newEnergy-currentEnergy+pressure*(newVol-vol))/(k*temperature))
+    print(acceptanceCriterion)
+    #Accept the new state if the acceptance criterion is greater than 1
+    if acceptanceCriterion >= 1:
+        L = newL
+        currentEnergy = newEnergy
+        particleBoolArray = newBoolArray
+        vol = newVol
+        particleIndices = newIndices
+    #Accept the new state with a finite probability
+    else:
+        zetta = np.random.uniform(0,1)
+        if acceptanceCriterion > zetta:
+            #Accept the new state
+            L = newL
+            currentEnergy = newEnergy
+            particleBoolArray = newBoolArray
+            vol = newVol
+            particleIndices = newIndices
